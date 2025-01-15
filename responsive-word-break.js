@@ -8,7 +8,7 @@ class ResponsiveWordBreak {
 
         // 除外タグに開発者ツール関連の要素を追加
         this.excludeTags = new Set([
-            'SCRIPT', 'STYLE', 'CODE', 'PRE', 'TITLE',
+            'SCRIPT', 'STYLE', 'CODE', 'PRE', 'TITLE', 'KEYWORD',
             'HTML', 'HEAD', // 開発者ツール関連
         ]);
         
