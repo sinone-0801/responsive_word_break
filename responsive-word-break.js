@@ -36,6 +36,7 @@ class ResponsiveWordBreak {
             }
             .word-wrapper {
                 display: inline-block;
+                white-space: pre-wrap;
             }
             @media (max-width: 767px) {
                 .text-block { font-size: 16px; }
@@ -250,24 +251,73 @@ class ResponsiveWordBreak {
     }
 
     processText(text) {
+        // アルファベット・数字・記号の連続をチェック
+        const isLatinOrNumeric = /^[a-zA-Z0-9\s.,\-_!@#$%^&*()+=]+$/.test(text.trim());
+        
+        if (isLatinOrNumeric) {
+            // 空白で区切られた単語として処理（空白は前の単語に含める）
+            const words = text.split(/(?<=\s)/);
+            return words.map(word => {
+                if (!word.trim()) return word; // 完全な空白文字列はそのまま返す
+                return `<span class="word-wrapper">${word}</span>`;
+            }).join('');
+        }
+    
+        // 日本語テキストの処理
         const tokens = this.tokenizer.tokenize(text);
         let result = '';
         let currentChunk = '';
+        let hasLatinSequence = false;
+        let latinSequence = '';
         
         tokens.forEach((token, index) => {
-            if (this.particleTypes.has(token.pos)) {
-                currentChunk += token.surface_form;
-            } else {
+            const isLatinOrNum = /^[a-zA-Z0-9.,\-_!@#$%^&*()+=]+$/.test(token.surface_form);
+            const isSpace = /^\s+$/.test(token.surface_form);
+    
+            if (isLatinOrNum) {
+                // アルファベットや数字の連続を蓄積
                 if (currentChunk) {
                     result += `<span class="word-wrapper">${currentChunk}</span>`;
                     currentChunk = '';
                 }
-                currentChunk = token.surface_form;
+                latinSequence += token.surface_form;
+                hasLatinSequence = true;
+            } else if (isSpace) {
+                // スペースの処理
+                if (hasLatinSequence) {
+                    latinSequence += token.surface_form;
+                } else if (currentChunk) {
+                    currentChunk += token.surface_form;
+                } else {
+                    result += token.surface_form;
+                }
+            } else {
+                // 日本語文字などの処理
+                if (hasLatinSequence) {
+                    result += `<span class="word-wrapper">${latinSequence}</span>`;
+                    latinSequence = '';
+                    hasLatinSequence = false;
+                }
+                
+                if (this.particleTypes.has(token.pos)) {
+                    currentChunk += token.surface_form;
+                } else {
+                    if (currentChunk) {
+                        result += `<span class="word-wrapper">${currentChunk}</span>`;
+                        currentChunk = '';
+                    }
+                    currentChunk = token.surface_form;
+                }
             }
             
             // 最後のトークンの処理
-            if (index === tokens.length - 1 && currentChunk) {
-                result += `<span class="word-wrapper">${currentChunk}</span>`;
+            if (index === tokens.length - 1) {
+                if (hasLatinSequence) {
+                    result += `<span class="word-wrapper">${latinSequence}</span>`;
+                }
+                if (currentChunk) {
+                    result += `<span class="word-wrapper">${currentChunk}</span>`;
+                }
             }
         });
         
@@ -315,6 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 // 使い方
+// htmlと同じディレクトリに responsive-word-break.js を配置
 /* 
 <head>
     <!-- kuromoji.jsの読み込み -->
