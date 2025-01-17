@@ -40,7 +40,6 @@ class ResponsiveWordBreak:
             }
             .word-wrapper {
                 display: inline-block;
-                white-space: pre-wrap;
             }
             @media (max-width: 767px) {
                 .text-block { font-size: 16px; }
@@ -121,7 +120,7 @@ class ResponsiveWordBreak:
                 if is_latin_or_num:
                     print(f"Debug: Latin/Num found: '{surface}'")
                     if current_chunk:
-                        result.append(f'<span class="word-wrapper">{current_chunk}</span>')
+                        result.append(f'<span class="word-wrapper" style="white-space: pre-wrap;">{current_chunk}</span>')
                         current_chunk = ''
                     latin_sequence += surface
                     has_latin_sequence = True
@@ -133,7 +132,7 @@ class ResponsiveWordBreak:
                         latin_sequence += surface
                     elif current_chunk:
                         # 日本語チャンクにスペースを追加
-                        result.append(f'<span class="word-wrapper">{current_chunk}{surface}</span>')
+                        result.append(f'<span class="word-wrapper" style="white-space: pre-wrap;">{current_chunk}{surface}</span>')
                         current_chunk = ''
                     else:
                         # 単独のスペース
@@ -145,7 +144,7 @@ class ResponsiveWordBreak:
                         words = self.split_latin_sequence(latin_sequence)
                         for word in words:
                             if word.strip():
-                                result.append(f'<span class="word-wrapper">{word}</span>')
+                                result.append(f'<span class="word-wrapper" style="white-space: pre-wrap;">{word}</span>')
                             else:
                                 result.append(word)
                         latin_sequence = ''
@@ -158,7 +157,7 @@ class ResponsiveWordBreak:
                             current_chunk = surface
                     else:
                         if current_chunk:
-                            result.append(f'<span class="word-wrapper">{current_chunk}</span>')
+                            result.append(f'<span class="word-wrapper" style="white-space: pre-wrap;">{current_chunk}</span>')
                         current_chunk = surface
 
             node = node.next
@@ -168,11 +167,11 @@ class ResponsiveWordBreak:
             words = self.split_latin_sequence(latin_sequence)
             for word in words:
                 if word.strip():
-                    result.append(f'<span class="word-wrapper">{word}</span>')
+                    result.append(f'<span class="word-wrapper" style="white-space: pre-wrap;">{word}</span>')
                 else:
                     result.append(word)
         if current_chunk:
-            result.append(f'<span class="word-wrapper">{current_chunk}</span>')
+            result.append(f'<span class="word-wrapper" style="white-space: pre-wrap;">{current_chunk}</span>')
 
         final_result = ''.join(result)
         print(f"Debug: Japanese text result: '{final_result}'")
@@ -186,7 +185,7 @@ class ResponsiveWordBreak:
         
         for word in words:
             if word.strip():
-                result.append(f'<span class="word-wrapper">{word}</span>')
+                result.append(f'<span class="word-wrapper" style="white-space: pre-wrap;">{word}</span>')
             else:
                 result.append(word)
 
