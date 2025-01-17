@@ -1,0 +1,4 @@
+beautifulsoup4==4.12.3
+mecab-python3==1.0.10
+soupsieve==2.6
+unidic-lite==1.0.8
