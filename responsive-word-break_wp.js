@@ -1,3 +1,4 @@
+// responsive-word-break.js
 (function($) {
     class ResponsiveWordBreak {
         constructor() {
@@ -5,366 +6,182 @@
             this.PROCESSED_MARKER = 'data-rwb-processed';
             this.particleTypes = new Set(['助詞', '助動詞', '記号', '補助記号', '句点', '読点']);
             this.isProcessing = false;
-            this.excludeTags = new Set([
-                'SCRIPT', 'STYLE', 'CODE', 'PRE', 'TITLE', 'KEYWORD',
-                'HTML', 'HEAD', 
-                'WP-ADMIN', 'ADMIN-BAR' // WordPress特有の要素を追加
-            ]);
-            this.CHUNK_SIZE = 10;
-            this.CHUNK_DELAY = 10;
-
-            // WordPressのグローバル変数チェック
-            if (typeof rwbParams !== 'undefined') {
-                this.dicPath = rwbParams.dicPath;
-            } else {
-                this.dicPath = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/";
-            }
+            
+            // 処理対象を限定
+            this.targetSelectors = '.entry-content, .post-content, article'; // WordPressの主要コンテンツ領域
+            
+            // チャンクサイズを調整
+            this.CHUNK_SIZE = 5;
+            this.CHUNK_DELAY = 50; // 処理間隔を増やす
+            this.MAX_TEXT_LENGTH = 1000; // 一度に処理する最大文字数
+            this.PROCESS_TIMEOUT = 30000; // 処理の最大時間（30秒）
+            
+            this.processStartTime = null;
+            this.processTimer = null;
         }
 
         init() {
-            // WordPressのjQuery使用
             if (!$('style.responsive_word_break').length) {
                 this.addStyle();
             }
 
-            this.addProgressBar();
+            // 処理開始前にローディング表示
+            this.showLoading();
 
-            // WordPressのajaxurl使用（必要な場合）
             kuromoji.builder({ 
-                dicPath: this.dicPath 
+                dicPath: rwbParams.dicPath 
             }).build((err, tokenizer) => {
                 if (err) {
                     console.error('Tokenizer initialization failed:', err);
+                    this.hideLoading();
                     return;
                 }
                 this.tokenizer = tokenizer;
-                this.processContent();
+                this.processTargetContent();
             });
         }
 
-        // スタイルをWordPress向けに最適化
-        addStyle() {
-            const style = `
-                .text-block {
-                    word-wrap: break-word;
-                    overflow-wrap: break-word;
-                    hyphens: auto;
-                    line-height: 1.6;
-                    margin-bottom: 1em;
-                }
-                .responsive-paragraph {
-                    display: block;
-                    width: 100%;
-                }
-                .break-word {
-                    word-break: break-all;
-                }
-                .word-wrapper {
-                    display: inline-block;
-                    white-space: pre-wrap;
-                }
-                @media (max-width: 767px) {
-                    .text-block { font-size: 16px; }
-                }
-                @media (min-width: 768px) and (max-width: 1023px) {
-                    .text-block { font-size: 18px; }
-                }
-                @media (min-width: 1024px) {
-                    .text-block { font-size: 20px; }
-                }
-                .rwb-progress {
-                    position: fixed;
-                    top: 32px; /* WordPressアドミンバーの高さを考慮 */
-                    left: 0;
-                    width: 100%;
-                    height: 3px;
-                    background: #f0f0f0;
-                    z-index: 999999;
-                }
-                .rwb-progress-bar {
-                    height: 100%;
-                    background: #0073aa; /* WordPressカラー */
-                    transition: width 0.3s ease;
-                }
-            `;
-            $('<style>').addClass('responsive_word_break').text(style).appendTo('head');
+        showLoading() {
+            $('body').append('<div class="rwb-loading">テキスト処理中...<div class="rwb-progress"><div class="rwb-progress-bar"></div></div></div>');
         }
-        
-        addProgressBar() {
-            const progress = document.createElement('div');
-            progress.className = 'rwb-progress';
-            progress.innerHTML = '<div class="rwb-progress-bar" style="width: 0%"></div>';
-            document.body.insertBefore(progress, document.body.firstChild);
+
+        hideLoading() {
+            $('.rwb-loading').remove();
         }
 
         updateProgress(percent) {
-            const bar = document.querySelector('.rwb-progress-bar');
-            if (bar) {
-                bar.style.width = `${percent}%`;
-                if (percent >= 100) {
-                    setTimeout(() => {
-                        bar.parentElement.remove();
-                    }, 500);
+            $('.rwb-progress-bar').css('width', percent + '%');
+        }
+
+        processTargetContent() {
+            this.processStartTime = Date.now();
+            const targetElements = $(this.targetSelectors).not('[' + this.PROCESSED_MARKER + '="true"]');
+            
+            if (targetElements.length === 0) {
+                this.hideLoading();
+                return;
+            }
+
+            this.processElementsInChunks(targetElements);
+        }
+
+        processElementsInChunks(elements) {
+            let currentIndex = 0;
+            const totalElements = elements.length;
+
+            const processChunk = () => {
+                // 処理時間チェック
+                if (Date.now() - this.processStartTime > this.PROCESS_TIMEOUT) {
+                    console.warn('Processing timeout reached');
+                    this.hideLoading();
+                    return;
                 }
-            }
-        }
 
-        async processDocumentInChunks() {
-            if (this.isProcessing) return;
-            this.isProcessing = true;
-
-            const nodes = [];
-            const walker = document.createTreeWalker(
-                document.body,
-                NodeFilter.SHOW_TEXT,
-                {
-                    acceptNode: (node) => {
-                        return this.shouldProcessNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-                    }
-                },
-                false
-            );
-
-            let node;
-            while (node = walker.nextNode()) {
-                nodes.push(node);
-            }
-
-            const totalNodes = nodes.length;
-            let processedNodes = 0;
-
-            for (let i = 0; i < nodes.length; i += this.CHUNK_SIZE) {
-                const chunk = nodes.slice(i, i + this.CHUNK_SIZE);
+                const chunk = elements.slice(currentIndex, currentIndex + this.CHUNK_SIZE);
                 
-                await new Promise(resolve => {
-                    requestAnimationFrame(() => {
-                        chunk.forEach(node => {
-                            if (!node.isConnected) return; // 既に削除された要素はスキップ
-                            try {
-                                this.processNode(node);
-                            } catch (error) {
-                                console.error('Error processing node:', error);
-                            }
-                        });
-                        processedNodes += chunk.length;
-                        this.updateProgress((processedNodes / totalNodes) * 100);
-                        resolve();
-                    });
+                chunk.each((_, element) => {
+                    this.processElement($(element));
                 });
 
-                // チャンク間の遅延を増やす
-                await new Promise(resolve => setTimeout(resolve, this.CHUNK_DELAY));
+                currentIndex += this.CHUNK_SIZE;
+                this.updateProgress((currentIndex / totalElements) * 100);
+
+                if (currentIndex < totalElements) {
+                    setTimeout(processChunk, this.CHUNK_DELAY);
+                } else {
+                    this.hideLoading();
+                }
+            };
+
+            processChunk();
+        }
+
+        processElement($element) {
+            if ($element.attr(this.PROCESSED_MARKER) === 'true') {
+                return;
             }
 
-            this.isProcessing = false;
-        }
-
-        addStyle() {
-            const styleElement = document.createElement('style');
-            styleElement.className = 'responsive_word_break';
-            styleElement.textContent = this.style;
-            document.head.appendChild(styleElement);
-        }
-
-        shouldProcessNode(node) {
-            if (node.nodeType !== Node.TEXT_NODE) return false;
-            if (!node.textContent.trim()) return false;
-            
-            const parent = node.parentElement;
-            if (!parent) return false;
-            
-            // 除外タグまたは処理済みのノードはスキップ
-            if (this.excludeTags.has(parent.tagName) || 
-                parent.hasAttribute(this.PROCESSED_MARKER)) {
-                return false;
+            const text = $element.text();
+            if (!text || text.length > this.MAX_TEXT_LENGTH) {
+                $element.attr(this.PROCESSED_MARKER, 'true');
+                return;
             }
-            
-            // 属性値は処理しない
-            const attributes = Array.from(parent.attributes);
-            return !attributes.some(attr => attr.value === node.textContent);
-        }
 
-        // MutationObserverの改善
-        observeChanges() {
-            let timer = null;
-            const observer = new MutationObserver(mutations => {
-                if (timer) clearTimeout(timer);
-                timer = setTimeout(() => {
-                    // 開発者ツールのDOM変更を無視
-                    if (mutations.some(m => this.isDevToolsRelated(m.target))) {
-                        return;
-                    }
-
-                    const newNodes = [];
-                    mutations.forEach(mutation => {
-                        // 属性の変更は無視
-                        if (mutation.type === 'attributes') return;
-                        
-                        mutation.addedNodes.forEach(node => {
-                            if (node.nodeType === Node.ELEMENT_NODE && !node.hasAttribute(this.PROCESSED_MARKER)) {
-                                const walker = document.createTreeWalker(
-                                    node,
-                                    NodeFilter.SHOW_TEXT,
-                                    null,
-                                    false
-                                );
-                                let textNode;
-                                while (textNode = walker.nextNode()) {
-                                    if (this.shouldProcessNode(textNode)) {
-                                        newNodes.push(textNode);
-                                    }
-                                }
-                            }
-                        });
-                    });
-
-                    if (newNodes.length > 0) {
-                        this.processNodesAsync(newNodes);
-                    }
-                }, 100);
-            });
-
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true,
-                attributes: false
-            });
-        }
-
-        // 開発者ツール関連のチェックを追加
-        isDevToolsRelated(element) {
-            if (!element) return false;
-            // 開発者ツール関連の要素をチェック
-            return element.id?.includes('__debug') || 
-                    element.className?.includes('debug') ||
-                    element.tagName === 'HTML' ||
-                    element.tagName === 'HEAD';
-        }
-        
-        async processNodesAsync(nodes) {
-            for (let i = 0; i < nodes.length; i += this.CHUNK_SIZE) {
-                const chunk = nodes.slice(i, i + this.CHUNK_SIZE);
-                await new Promise(resolve => {
-                    requestAnimationFrame(() => {
-                        chunk.forEach(node => this.processNode(node));
-                        resolve();
-                    });
-                });
-            }
+            const processedText = this.processText(text);
+            $element.html(processedText).attr(this.PROCESSED_MARKER, 'true');
         }
 
         processText(text) {
-            // アルファベット・数字・記号の連続をチェック
-            const isLatinOrNumeric = /^[a-zA-Z0-9\s.,\-_!@#$%^&*()+=]+$/.test(text.trim());
-            
-            if (isLatinOrNumeric) {
-                // 空白で区切られた単語として処理（空白は前の単語に含める）
-                const words = text.split(/(?<=\s)/);
-                return words.map(word => {
-                    if (!word.trim()) return word; // 完全な空白文字列はそのまま返す
-                    return `<span class="word-wrapper">${word}</span>`;
-                }).join('');
+            if (!text.trim()) return text;
+
+            // 短いテキストや英数字のみの場合はそのまま返す
+            if (text.length < 10 || /^[a-zA-Z0-9\s.,\-_!@#$%^&*()+=]+$/.test(text)) {
+                return text;
             }
-        
-            // 日本語テキストの処理
+
             const tokens = this.tokenizer.tokenize(text);
             let result = '';
             let currentChunk = '';
-            let hasLatinSequence = false;
-            let latinSequence = '';
-            
+
             tokens.forEach((token, index) => {
-                const isLatinOrNum = /^[a-zA-Z0-9.,\-_!@#$%^&*()+=]+$/.test(token.surface_form);
-                const isSpace = /^\s+$/.test(token.surface_form);
-        
-                if (isLatinOrNum) {
-                    // アルファベットや数字の連続を蓄積
+                const surface = token.surface_form;
+                
+                if (this.particleTypes.has(token.pos)) {
+                    currentChunk += surface;
+                } else {
                     if (currentChunk) {
                         result += `<span class="word-wrapper">${currentChunk}</span>`;
                         currentChunk = '';
                     }
-                    latinSequence += token.surface_form;
-                    hasLatinSequence = true;
-                } else if (isSpace) {
-                    // スペースの処理
-                    if (hasLatinSequence) {
-                        latinSequence += token.surface_form;
-                    } else if (currentChunk) {
-                        currentChunk += token.surface_form;
-                    } else {
-                        result += token.surface_form;
-                    }
-                } else {
-                    // 日本語文字などの処理
-                    if (hasLatinSequence) {
-                        result += `<span class="word-wrapper">${latinSequence}</span>`;
-                        latinSequence = '';
-                        hasLatinSequence = false;
-                    }
-                    
-                    if (this.particleTypes.has(token.pos)) {
-                        currentChunk += token.surface_form;
-                    } else {
-                        if (currentChunk) {
-                            result += `<span class="word-wrapper">${currentChunk}</span>`;
-                            currentChunk = '';
-                        }
-                        currentChunk = token.surface_form;
-                    }
+                    result += `<span class="word-wrapper">${surface}</span>`;
                 }
-                
-                // 最後のトークンの処理
-                if (index === tokens.length - 1) {
-                    if (hasLatinSequence) {
-                        result += `<span class="word-wrapper">${latinSequence}</span>`;
-                    }
-                    if (currentChunk) {
-                        result += `<span class="word-wrapper">${currentChunk}</span>`;
-                    }
+
+                if (index === tokens.length - 1 && currentChunk) {
+                    result += `<span class="word-wrapper">${currentChunk}</span>`;
                 }
             });
-            
+
             return result;
         }
 
-        processNode(node) {
-            if (!this.shouldProcessNode(node)) return;
-            
-            const processed = this.processText(node.textContent);
-            const wrapper = document.createElement('span');
-            wrapper.innerHTML = processed;
-            
-            // 処理済みマーカーを設定
-            node.parentElement.setAttribute(this.PROCESSED_MARKER, 'true');
-            node.parentElement.replaceChild(wrapper, node);
+        addStyle() {
+            const style = `
+                .word-wrapper {
+                    display: inline-block;
+                    white-space: pre-wrap;
+                }
+                .rwb-loading {
+                    position: fixed;
+                    top: 32px;
+                    left: 0;
+                    width: 100%;
+                    background: rgba(255, 255, 255, 0.9);
+                    padding: 10px;
+                    text-align: center;
+                    z-index: 999999;
+                }
+                .rwb-progress {
+                    height: 3px;
+                    background: #f0f0f0;
+                    margin-top: 5px;
+                }
+                .rwb-progress-bar {
+                    height: 100%;
+                    background: #0073aa;
+                    transition: width 0.3s ease;
+                    width: 0%;
+                }
+            `;
+            $('<style>').addClass('responsive_word_break').text(style).appendTo('head');
         }
-
-        processDocument() {
-            const walker = document.createTreeWalker(
-                document.body,
-                NodeFilter.SHOW_TEXT,
-                null,
-                false
-            );
-
-            const nodes = [];
-            let node;
-            while (node = walker.nextNode()) nodes.push(node);
-            
-            // 非同期で処理して重いDOM操作を分散
-            nodes.forEach((node, index) => {
-                setTimeout(() => {
-                    this.processNode(node);
-                }, index * 0);
-            });
-        }
-
     }
 
-    // WordPressのDOM準備完了時に初期化
-    $(document).ready(function() {
-        const rwb = new ResponsiveWordBreak();
-        rwb.init();
+    // 遅延初期化
+    $(window).on('load', function() {
+        setTimeout(function() {
+            const rwb = new ResponsiveWordBreak();
+            rwb.init();
+        }, 1000); // ページ読み込み後1秒待ってから初期化
     });
 
 })(jQuery);
