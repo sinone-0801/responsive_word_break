@@ -75,15 +75,15 @@ class ResponsiveWordBreak {
         this.addProgressBar();
 
         kuromoji.builder({ 
-            dicPath: 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict' 
+            dicPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/" 
         }).build((err, tokenizer) => {
             if (err) {
                 console.error('Tokenizer initialization failed:', err);
                 return;
             }
+            console.log('Tokenizer initialized successfully'); 
             this.tokenizer = tokenizer;
-            this.processDocumentInChunks();
-            this.observeChanges();
+            this.processContent();
         });
     }
 
