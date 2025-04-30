@@ -1,7 +1,7 @@
 import MeCab
 import re
 from typing import List, Set, Tuple
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 import html
 import argparse
 from pathlib import Path
@@ -56,9 +56,13 @@ class ResponsiveWordBreak:
         """ノードを処理すべきかどうかを判定"""
         if node.string is None:
             return False
+            
+        # コメントノードは処理しない
+        if isinstance(node, Comment):
+            return False
 
         # 除外タグ内のテキストは処理しない
-        if node.parent.name in self.exclude_tags:
+        if node.parent and node.parent.name in self.exclude_tags:
             return False
             
         # HTMLタグとして解釈されるテキストは処理しない
@@ -66,7 +70,7 @@ class ResponsiveWordBreak:
             return False
             
         # 属性値は処理しない
-        if node.parent.attrs:
+        if node.parent and node.parent.attrs:
             for attr_value in node.parent.attrs.values():
                 if isinstance(attr_value, str) and attr_value == node.string:
                     return False
@@ -230,7 +234,8 @@ class ResponsiveWordBreak:
             soup.head.append(style_tag)
         
         # テキストノードの処理
-        for text_node in soup.find_all(string=True):
+        # HTMLコメントノードを明示的に除外
+        for text_node in soup.find_all(string=lambda text: not isinstance(text, Comment)):
             if self.should_process_node(text_node):
                 processed_text = self.process_text(text_node.string)
                 if processed_text != text_node.string:
